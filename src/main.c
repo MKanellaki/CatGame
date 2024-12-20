@@ -18,12 +18,10 @@ static struct
     // Ideally, they should have been automatically loaded
     // by iterating over the res/ folder and filling in a hastable
     SDL_Texture *run_texture, *jump_texture, *idle_texture, *sleep_texture;
-    Mix_Chunk *gem_sfx;
-    TTF_Font *main_font;
 
-    ng_sprite_t player;
-    ng_label_t welcome_text;
     ng_animated_sprite_t run, jump, idle, sleep;
+
+    bool is_jumping;
 } ctx;
 
 static void create_actors(void)
@@ -48,15 +46,15 @@ static void create_actors(void)
     ng_sprite_set_scale(&ctx.jump.sprite, 2.0f);
     ctx.jump.sprite.transform.x = 200.0f;
     
-    ng_animated_create(&ctx.idle, ctx.idle_texture, 9);  //idle
+    ng_animated_create(&ctx.idle, ctx.idle_texture, 7);  //idle
     ng_sprite_set_scale(&ctx.idle.sprite, 2.0f);
     ctx.idle.sprite.transform.x = 200.0f;
     
-    ng_animated_create(&ctx.sleep, ctx.sleep_texture, 9);  //sleep
+    ng_animated_create(&ctx.sleep, ctx.sleep_texture, 3);  //sleep
     ng_sprite_set_scale(&ctx.sleep.sprite, 2.0f);
     ctx.sleep.sprite.transform.x = 200.0f;
 
-
+    ctx.is_jumping = false; 
 }
 
 static void handle_event(SDL_Event *event)
@@ -64,24 +62,17 @@ static void handle_event(SDL_Event *event)
     switch (event->type)
     {
     case SDL_KEYDOWN:
-        if (event->key.keysym.sym == SDLK_SPACE){
-            
-            if (ng_interval_is_ready(&ctx.game_tick))
+        if (event->key.keysym.sym == SDLK_SPACE) {
+            // Only start the jump animation if it's not already jumping
+            if (!ctx.is_jumping)
             {
-                ng_animated_set_frame(&ctx.jump, (ctx.jump.frame + 1)
-                % ctx.jump.total_frames);
+                ctx.is_jumping = true;
+                // Reset the jump animation to the first frame
+                ng_animated_set_frame(&ctx.jump, 0);
             }
-            
         }
-
         break;
 
-    // case SDL_MOUSEMOTION:
-    //     // Move label on mouse position
-    //     // By the way, that's how you can implement a custom cursor
-    //     ctx.welcome_text.sprite.transform.x = event->motion.x;
-    //     ctx.welcome_text.sprite.transform.y = event->motion.y;
-    //     break;
     }
 }
 
@@ -90,19 +81,30 @@ static void update_and_render_scene(float delta)
     // Handling "continuous" events, which are now repeatable
     const Uint8* keys = SDL_GetKeyboardState(NULL);
 
-    if (keys[SDL_SCANCODE_LEFT]) ctx.player.transform.x -= 640* delta;
-    if (keys[SDL_SCANCODE_RIGHT]) ctx.player.transform.x += 640* delta;
 
-    //Update the explosion's frame once every 100ms
-    // if (ng_interval_is_ready(&ctx.game_tick))
-    // {
-    //     ng_animated_set_frame(&ctx.jump, (ctx.jump.frame + 1)
-    //             % ctx.jump.total_frames);
-    // }
+    if (ctx.is_jumping) {
+        // Move to the next frame of the jump animation
+        if (ng_interval_is_ready(&ctx.game_tick)) {
+            ng_animated_set_frame(&ctx.jump, (ctx.jump.frame + 1) % ctx.jump.total_frames);
+        }
 
-    ng_sprite_render(&ctx.player, ctx.game.renderer);
-    ng_sprite_render(&ctx.jump.sprite, ctx.game.renderer);
-    ng_sprite_render(&ctx.welcome_text.sprite, ctx.game.renderer);
+        // Check if the jump animation has finished
+        if (ctx.jump.frame == ctx.jump.total_frames - 1) {
+            ctx.is_jumping = false;  // Animation has finished, stop jumping
+            // After the jump ends, you could switch to another animation like idle or run
+        }
+    }else{
+        if (ng_interval_is_ready(&ctx.game_tick)) {
+            ng_animated_set_frame(&ctx.idle, (ctx.idle.frame + 1) % ctx.idle.total_frames);
+        }
+    }
+
+    // Render player and animations
+    if (ctx.is_jumping) {
+        ng_sprite_render(&ctx.jump.sprite, ctx.game.renderer);
+    } else {
+        ng_sprite_render(&ctx.idle.sprite, ctx.game.renderer);  // Show idle if not jumping
+    }
 }
 
 int main()
