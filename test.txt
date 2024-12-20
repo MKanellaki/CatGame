@@ -1,4 +1,0 @@
-webhooktest
-pull *completed successfully*
-push *auto tha to doume*
-push (wsl edition)
