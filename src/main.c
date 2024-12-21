@@ -23,10 +23,14 @@ static struct
 
     ng_animated_sprite_t run, jump, idle, sleep;
 
-    Mix_Chunk *SB_sfx;
+    Mix_Music *SB_bm;
+    Mix_Chunk *run_sfx;
+
 
     bool is_jumping;
     bool is_running;
+    bool run_sfx_playing;
+    int run_sfx_channel;
 
 } ctx;
 
@@ -65,11 +69,23 @@ static void create_actors(void)
     ctx.sleep.sprite.transform.y = 100.0f;
 
     //load audio
-    ctx.SB_sfx = ng_audio_load("assets/music/OST 1 - Silver Bells (Loopable).wav");
+    ctx.SB_bm = ng_music_load("assets/audio/OST 1 - Silver Bells (Loopable).ogg");
+    ctx.run_sfx = ng_audio_load("assets/audio/run.wav");
 
+#ifndef NO_AUDIO
+
+    Mix_VolumeMusic(16);  // Background music at lower volume
+    Mix_VolumeChunk(ctx.run_sfx, 128);  // Running sound at full volume
+
+#endif
 
     ctx.is_jumping = false; 
     ctx.is_running = false; 
+    ctx.run_sfx_playing = false;
+    ctx.run_sfx_channel = -1;
+
+    //Start background music once, looping it indefinitely
+    ng_music_play(ctx.SB_bm);
 }
 
 static void handle_event(SDL_Event *event)
@@ -96,6 +112,19 @@ static void handle_event(SDL_Event *event)
                 // Reset the run animation to the first frame
                 ng_animated_set_frame(&ctx.run, 0);
             }
+
+            if (!ctx.run_sfx_playing) {
+                ctx.run_sfx_channel = ng_return_channel(ctx.run_sfx, -1);
+                ctx.run_sfx_playing = true;   // Mark that the sound has started
+            }
+        }
+
+        if (event->key.keysym.sym == SDLK_LEFT) {
+
+            if (!ctx.run_sfx_playing) {
+                ctx.run_sfx_channel = ng_return_channel(ctx.run_sfx, -1);
+                ctx.run_sfx_playing = true;   // Mark that the sound has started
+            }
         }
         break;
 
@@ -103,6 +132,24 @@ static void handle_event(SDL_Event *event)
         if (event->key.keysym.sym == SDLK_RIGHT) {
             // Stop running animation when the right key is released
             ctx.is_running = false;
+            if (ctx.run_sfx_playing) {
+                // Stop the running sound when the key is released
+                #ifndef NO_AUDIO    
+                    Mix_HaltChannel(ctx.run_sfx_channel);  // Halt the specific channel
+                #endif
+                ctx.run_sfx_playing = false;  // Mark that the sound has stopped
+            }            
+        }
+
+        if (event->key.keysym.sym == SDLK_LEFT) {
+
+            if (ctx.run_sfx_playing) {
+                // Stop the running sound when the key is released
+                #ifndef NO_AUDIO    
+                    Mix_HaltChannel(ctx.run_sfx_channel);  // Halt the specific channel
+                #endif
+                ctx.run_sfx_playing = false;  // Mark that the sound has stopped
+            }        
         }
         break;
 
@@ -120,6 +167,7 @@ static void update_and_render_scene(float delta)
             ctx.idle.sprite.transform.x -= SPEED * delta;
             ctx.jump.sprite.transform.x -= SPEED * delta;  
         }
+            
     } 
 
     if (keys[SDL_SCANCODE_RIGHT]){ //move right
@@ -167,7 +215,6 @@ static void update_and_render_scene(float delta)
         ng_sprite_render(&ctx.idle.sprite, ctx.game.renderer);  // Show idle if not jumping
     }
 
-    ng_audio_play(ctx.SB_sfx);
 
     
 }
