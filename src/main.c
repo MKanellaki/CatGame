@@ -87,6 +87,13 @@ static void handle_event(SDL_Event *event)
         }
         break;
 
+    case SDL_KEYUP:
+        if (event->key.keysym.sym == SDLK_RIGHT) {
+            // Stop running animation when the right key is released
+            ctx.is_running = false;
+        }
+        break;
+
     }
 }
 
@@ -105,7 +112,11 @@ static void update_and_render_scene(float delta)
         // Check if the jump animation has finished
         if (ctx.jump.frame == ctx.jump.total_frames - 1) {
             ctx.is_jumping = false;  // Animation has finished, stop jumping
-            // After the jump ends, you could switch to another animation like idle or run
+
+            if (keys[SDL_SCANCODE_RIGHT]) { //if right is being pressed continue running after the jump
+                ctx.is_running = true;
+                ng_animated_set_frame(&ctx.run, 0);  // Reset to the first frame of the run animation
+            }
         }
     }else if(ctx.is_running){
         // Move to the next frame of the running animation
@@ -113,18 +124,13 @@ static void update_and_render_scene(float delta)
             ng_animated_set_frame(&ctx.run, (ctx.run.frame + 1) % ctx.run.total_frames);
         }
 
-        // Check if the run animation has finished
-        if (ctx.run.frame == ctx.run.total_frames - 1) {
-            ctx.is_running = false;  // Animation has finished, stop running
-            // After the run ends, you could switch to another animation like idle or run
-        }
     }else{
         if (ng_interval_is_ready(&ctx.game_tick)) {
             ng_animated_set_frame(&ctx.idle, (ctx.idle.frame + 1) % ctx.idle.total_frames);
         }
     }
 
-    // Render player and animations
+    // Render animations
     if (ctx.is_jumping) {
         ng_sprite_render(&ctx.jump.sprite, ctx.game.renderer);
     } else if (ctx.is_running){
