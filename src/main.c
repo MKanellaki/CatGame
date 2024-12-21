@@ -7,7 +7,8 @@
 #include "engine/audio.h"
 
 #define WIDTH 640
-#define HEIGHT 640
+#define HEIGHT 480
+#define FLOOR HEIGHT - 59.0
 
 static struct
 {
@@ -42,19 +43,23 @@ static void create_actors(void)
     //Create animations (run, jump, idle, sleep)
     ng_animated_create(&ctx.run, ctx.run_texture, 7);  //run
     ng_sprite_set_scale(&ctx.run.sprite, 2.0f);
-    ctx.run.sprite.transform.x = 200.0f;
+    ctx.run.sprite.transform.x = 100.0f;
+    ctx.run.sprite.transform.y = FLOOR;
     
     ng_animated_create(&ctx.jump, ctx.jump_texture, 13);  //jump
     ng_sprite_set_scale(&ctx.jump.sprite, 2.0f);
-    ctx.jump.sprite.transform.x = 200.0f;
+    ctx.jump.sprite.transform.x = 100.0f;
+    ctx.jump.sprite.transform.y = FLOOR;
     
     ng_animated_create(&ctx.idle, ctx.idle_texture, 7);  //idle
     ng_sprite_set_scale(&ctx.idle.sprite, 2.0f);
-    ctx.idle.sprite.transform.x = 200.0f;
+    ctx.idle.sprite.transform.x = 100.0f;
+    ctx.idle.sprite.transform.y = FLOOR;
     
     ng_animated_create(&ctx.sleep, ctx.sleep_texture, 3);  //sleep
     ng_sprite_set_scale(&ctx.sleep.sprite, 2.0f);
-    ctx.sleep.sprite.transform.x = 200.0f;
+    ctx.sleep.sprite.transform.x = 100.0f;
+    ctx.sleep.sprite.transform.y = 100.0f;
 
     ctx.is_jumping = false; 
     ctx.is_running = false; 
@@ -65,7 +70,7 @@ static void handle_event(SDL_Event *event)
     switch (event->type)
     {
     case SDL_KEYDOWN:
-        if (event->key.keysym.sym == SDLK_SPACE) {
+        if (event->key.keysym.sym == SDLK_SPACE || event->key.keysym.sym == SDLK_UP ) {
             // Only start the jump animation if it's not already jumping
             if (!ctx.is_jumping)
             {
@@ -101,6 +106,22 @@ static void update_and_render_scene(float delta)
 {
     // Handling "continuous" events, which are now repeatable
     const Uint8* keys = SDL_GetKeyboardState(NULL);
+    
+    if (keys[SDL_SCANCODE_LEFT]){
+        if (ctx.run.sprite.transform.x > 0) {
+            ctx.run.sprite.transform.x -= 640 * delta;  // Move left
+            ctx.idle.sprite.transform.x -= 640 * delta;  // Move left
+            ctx.jump.sprite.transform.x -= 640 * delta;  // Move left
+        }
+    } 
+
+    if (keys[SDL_SCANCODE_RIGHT]){
+        if (ctx.run.sprite.transform.x < WIDTH - 64){
+            ctx.run.sprite.transform.x += 640* delta;
+            ctx.jump.sprite.transform.x += 640* delta;
+            ctx.idle.sprite.transform.x += 640* delta;
+        }
+    }
 
 
     if (ctx.is_jumping) {
