@@ -9,6 +9,7 @@
 #define WIDTH 640
 #define HEIGHT 480
 #define FLOOR HEIGHT - 59.0
+#define SPEED 480
 
 static struct
 {
@@ -107,19 +108,19 @@ static void update_and_render_scene(float delta)
     // Handling "continuous" events, which are now repeatable
     const Uint8* keys = SDL_GetKeyboardState(NULL);
     
-    if (keys[SDL_SCANCODE_LEFT]){
-        if (ctx.run.sprite.transform.x > 0) {
-            ctx.run.sprite.transform.x -= 640 * delta;  // Move left
-            ctx.idle.sprite.transform.x -= 640 * delta;  // Move left
-            ctx.jump.sprite.transform.x -= 640 * delta;  // Move left
+    if (keys[SDL_SCANCODE_LEFT]){ //move left
+        if (ctx.run.sprite.transform.x > 0) { //wall boundary
+            ctx.run.sprite.transform.x -= SPEED * delta; 
+            ctx.idle.sprite.transform.x -= SPEED * delta;
+            ctx.jump.sprite.transform.x -= SPEED * delta;  
         }
     } 
 
-    if (keys[SDL_SCANCODE_RIGHT]){
-        if (ctx.run.sprite.transform.x < WIDTH - 64){
-            ctx.run.sprite.transform.x += 640* delta;
-            ctx.jump.sprite.transform.x += 640* delta;
-            ctx.idle.sprite.transform.x += 640* delta;
+    if (keys[SDL_SCANCODE_RIGHT]){ //move right
+        if (ctx.run.sprite.transform.x < WIDTH - 64){ //wall boundary
+            ctx.run.sprite.transform.x += SPEED* delta;
+            ctx.jump.sprite.transform.x += SPEED* delta;
+            ctx.idle.sprite.transform.x += SPEED* delta;
         }
     }
 
