@@ -71,6 +71,17 @@ static void handle_event(SDL_Event *event)
                 ng_animated_set_frame(&ctx.jump, 0);
             }
         }
+        
+        //RUNNING ANIMATION EVENT
+        if (event->key.keysym.sym == SDLK_SPACE) {
+            // Only start the run animation if it's not already running
+            if (!ctx.is_running)
+            {
+                ctx.is_running = true;
+                // Reset the jump animation to the first frame
+                ng_animated_set_frame(&ctx.run, 0);
+            }
+        }
         break;
 
     }
@@ -104,6 +115,31 @@ static void update_and_render_scene(float delta)
         ng_sprite_render(&ctx.jump.sprite, ctx.game.renderer);
     } else {
         ng_sprite_render(&ctx.idle.sprite, ctx.game.renderer);  // Show idle if not jumping
+    }
+
+    //FOR RUNNING ANIMATION
+    if (ctx.is_running) {
+        // Move to the next frame of the running animation
+        if (ng_interval_is_ready(&ctx.game_tick)) {
+            ng_animated_set_frame(&ctx.run, (ctx.run.frame + 1) % ctx.run.total_frames);
+        }
+
+        // Check if the run animation has finished
+        if (ctx.run.frame == ctx.run.total_frames - 1) {
+            ctx.is_running = false;  // Animation has finished, stop running
+            // After the run ends, you could switch to another animation like idle or run
+        }
+    }else{
+        if (ng_interval_is_ready(&ctx.game_tick)) {
+            ng_animated_set_frame(&ctx.idle, (ctx.idle.frame + 1) % ctx.idle.total_frames);
+        }
+    }
+
+    // Render player and animations
+    if (ctx.is_running) {
+        ng_sprite_render(&ctx.run.sprite, ctx.game.renderer);
+    } else {
+        ng_sprite_render(&ctx.idle.sprite, ctx.game.renderer);  // Show idle if not running
     }
 }
 
