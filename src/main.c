@@ -22,6 +22,8 @@ static struct
     ng_animated_sprite_t run, jump, idle, sleep;
 
     bool is_jumping;
+    bool is_running;
+
 } ctx;
 
 static void create_actors(void)
@@ -55,6 +57,7 @@ static void create_actors(void)
     ctx.sleep.sprite.transform.x = 200.0f;
 
     ctx.is_jumping = false; 
+    ctx.is_running = false; 
 }
 
 static void handle_event(SDL_Event *event)
@@ -78,7 +81,7 @@ static void handle_event(SDL_Event *event)
             if (!ctx.is_running)
             {
                 ctx.is_running = true;
-                // Reset the jump animation to the first frame
+                // Reset the run animation to the first frame
                 ng_animated_set_frame(&ctx.run, 0);
             }
         }
@@ -104,21 +107,7 @@ static void update_and_render_scene(float delta)
             ctx.is_jumping = false;  // Animation has finished, stop jumping
             // After the jump ends, you could switch to another animation like idle or run
         }
-    }else{
-        if (ng_interval_is_ready(&ctx.game_tick)) {
-            ng_animated_set_frame(&ctx.idle, (ctx.idle.frame + 1) % ctx.idle.total_frames);
-        }
-    }
-
-    // Render player and animations
-    if (ctx.is_jumping) {
-        ng_sprite_render(&ctx.jump.sprite, ctx.game.renderer);
-    } else {
-        ng_sprite_render(&ctx.idle.sprite, ctx.game.renderer);  // Show idle if not jumping
-    }
-
-    //FOR RUNNING ANIMATION
-    if (ctx.is_running) {
+    }else if(ctx.is_running){
         // Move to the next frame of the running animation
         if (ng_interval_is_ready(&ctx.game_tick)) {
             ng_animated_set_frame(&ctx.run, (ctx.run.frame + 1) % ctx.run.total_frames);
@@ -136,11 +125,15 @@ static void update_and_render_scene(float delta)
     }
 
     // Render player and animations
-    if (ctx.is_running) {
-        ng_sprite_render(&ctx.run.sprite, ctx.game.renderer);
-    } else {
-        ng_sprite_render(&ctx.idle.sprite, ctx.game.renderer);  // Show idle if not running
+    if (ctx.is_jumping) {
+        ng_sprite_render(&ctx.jump.sprite, ctx.game.renderer);
+    } else if (ctx.is_running){
+         ng_sprite_render(&ctx.run.sprite, ctx.game.renderer);
+    }else {
+        ng_sprite_render(&ctx.idle.sprite, ctx.game.renderer);  // Show idle if not jumping
     }
+
+    
 }
 
 int main()
