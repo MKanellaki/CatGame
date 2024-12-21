@@ -72,8 +72,8 @@ static void handle_event(SDL_Event *event)
             }
         }
         
-        //RUNNING ANIMATION EVENT
-        if (event->key.keysym.sym == SDLK_SPACE) {
+        //RUNNING ANIMATION EVENT (when Right Arrow is pressed)
+        if (event->key.keysym.sym == SDLK_RIGHT) {
             // Only start the run animation if it's not already running
             if (!ctx.is_running)
             {
