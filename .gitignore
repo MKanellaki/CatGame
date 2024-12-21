@@ -1,4 +1,4 @@
 objects/
 bin
-web_build/*
-!web_build/index.html
+web_build/
+build_web.sh
