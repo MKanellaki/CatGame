@@ -23,6 +23,8 @@ static struct
 
     ng_animated_sprite_t run, jump, idle, sleep;
 
+    Mix_Chunk *SB_sfx;
+
     bool is_jumping;
     bool is_running;
 
@@ -61,6 +63,10 @@ static void create_actors(void)
     ng_sprite_set_scale(&ctx.sleep.sprite, 2.0f);
     ctx.sleep.sprite.transform.x = 100.0f;
     ctx.sleep.sprite.transform.y = 100.0f;
+
+    //load audio
+    ctx.SB_sfx = ng_audio_load("assets/music/OST 1 - Silver Bells (Loopable).wav");
+
 
     ctx.is_jumping = false; 
     ctx.is_running = false; 
@@ -160,6 +166,8 @@ static void update_and_render_scene(float delta)
     }else {
         ng_sprite_render(&ctx.idle.sprite, ctx.game.renderer);  // Show idle if not jumping
     }
+
+    ng_audio_play(ctx.SB_sfx);
 
     
 }
