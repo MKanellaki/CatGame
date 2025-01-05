@@ -19,6 +19,14 @@ typedef enum {
     SCENE_DEATH
 } Scene;
 
+typedef enum {
+    DIRECTION_RIGHT,
+    DIRECTION_LEFT
+} Direction;
+
+Direction cat_direction = DIRECTION_RIGHT;
+
+
 static struct
 {
     ng_game_t game;
@@ -77,15 +85,20 @@ bool check_collision(ng_animated_sprite_t *a, ng_animated_sprite_t *b) {
     return SDL_HasIntersectionF(&rect_a, &rect_b);
 }
 
+void render_cat(ng_sprite_t *sprite, SDL_Renderer *renderer, Direction direction) {
+    SDL_RendererFlip flip = (direction == DIRECTION_LEFT) ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE;
+
+    SDL_RenderCopyExF(renderer, sprite->texture, &sprite->src, &sprite->transform, 0, NULL, flip);
+
+}
+
 void reset_game_state() {
-    // Reset player health and position
     ctx.health = 3;
     ctx.ghost_count = 0;
     ctx.is_attacking = false;
     ctx.is_jumping = false;
     ctx.is_running = false;
 
-    // Reset player animations
     ng_animated_set_frame(&ctx.idle, 0);
     ng_animated_set_frame(&ctx.run, 0);
     ng_animated_set_frame(&ctx.jump, 0);
@@ -297,6 +310,13 @@ static void handle_event(SDL_Event *event)
         }
 
         if (event->key.keysym.sym == SDLK_LEFT || event->key.keysym.sym == SDLK_a) {
+            //only start the run animation if it's not already running
+            if (!ctx.is_running)
+            {
+                ctx.is_running = true;
+                //reset the run animation to the first frame
+                ng_animated_set_frame(&ctx.run, 0);
+            }
 
             if (!ctx.run_sfx_playing) {
                 ctx.run_sfx_channel = ng_return_channel(ctx.run_sfx, -1);
@@ -319,7 +339,8 @@ static void handle_event(SDL_Event *event)
         }
 
         if (event->key.keysym.sym == SDLK_LEFT || event->key.keysym.sym == SDLK_a) {
-
+            //stop running animation when the right key is released
+            ctx.is_running = false;
             if (ctx.run_sfx_playing) {
                 //stop the running sound when the key is released
                 #ifndef NO_AUDIO    
@@ -343,6 +364,7 @@ static void update_and_render_scene(float delta)
     
     if (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]){ //move left
         if (ctx.run.sprite.transform.x > 0) { //wall boundary
+            cat_direction = DIRECTION_LEFT;
             ctx.run.sprite.transform.x -= SPEED * delta; 
             ctx.idle.sprite.transform.x -= SPEED * delta;
             ctx.jump.sprite.transform.x -= SPEED * delta;
@@ -353,6 +375,7 @@ static void update_and_render_scene(float delta)
 
     if (keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]){ //move right
         if (ctx.run.sprite.transform.x < WIDTH - 64){ //wall boundary
+            cat_direction = DIRECTION_RIGHT;
             ctx.run.sprite.transform.x += SPEED* delta;
             ctx.jump.sprite.transform.x += SPEED* delta;
             ctx.idle.sprite.transform.x += SPEED* delta;
@@ -436,6 +459,11 @@ static void update_and_render_scene(float delta)
                 ctx.is_running = true;
                 ng_animated_set_frame(&ctx.run, 0);  //reset running animation
             }
+            //transition to running if the left key is held
+            if (keys[SDL_SCANCODE_LEFT] || keys[SDL_SCANCODE_A]) {
+                ctx.is_running = true;
+                ng_animated_set_frame(&ctx.run, 0);  //reset running animation
+            }
         }
 
         //move to the next frame of the jump animation
@@ -462,13 +490,13 @@ static void update_and_render_scene(float delta)
 
     // Render animations
     if (ctx.is_attacking){
-         ng_sprite_render(&ctx.attack.sprite, ctx.game.renderer);
+        render_cat(&ctx.attack.sprite, ctx.game.renderer, cat_direction);
     }else if (ctx.is_jumping) {
-        ng_sprite_render(&ctx.jump.sprite, ctx.game.renderer);
+        render_cat(&ctx.jump.sprite, ctx.game.renderer, cat_direction);
     } else if (ctx.is_running){
-         ng_sprite_render(&ctx.run.sprite, ctx.game.renderer);
+        render_cat(&ctx.run.sprite, ctx.game.renderer, cat_direction);
     }else {
-        ng_sprite_render(&ctx.idle.sprite, ctx.game.renderer);  //show idle when doing no actions
+        render_cat(&ctx.idle.sprite, ctx.game.renderer, cat_direction); //show idle when doing no actions
     }
 
     ng_sprite_render(&ctx.ghost.sprite, ctx.game.renderer);
