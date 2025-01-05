@@ -10,8 +10,7 @@
 #define HEIGHT 480
 #define FLOOR HEIGHT - 59.0
 #define SPEED 480
-#define MAX_GHOSTS 50
-#define MAX_SNOWMEN 20
+#define MAX_SNOWMEN 5
 
 static struct
 {
@@ -23,10 +22,10 @@ static struct
     // by iterating over the res/ folder and filling in a hastable
     SDL_Texture *run_texture, *jump_texture, *idle_texture, *attack_texture, *sleep_texture, *ghost_texture, *mouse_texture, *snowman_texture;
 
-    ng_animated_sprite_t run, jump, idle, attack, sleep, ghost[5], mouse, snowman[5];
+    ng_animated_sprite_t run, jump, idle, attack, sleep, ghost, mouse, snowman[MAX_SNOWMEN];
 
     Mix_Music *SB_bm;
-    Mix_Chunk *run_sfx;
+    Mix_Chunk *run_sfx, *hurt_sfx;
 
 
     bool is_jumping;
@@ -35,19 +34,39 @@ static struct
     bool run_sfx_playing;
     int run_sfx_channel;
 
-    float jump_velocity;  // Current vertical velocity
-    float gravity;        // Acceleration due to gravity
+    float jump_velocity;  
+    float gravity;        
 
     int count;
+    int active_snowmen;
 
 } ctx;
+
+bool check_collision(ng_animated_sprite_t *a, ng_animated_sprite_t *b) {
+
+    SDL_FRect rect_a = {
+        .x = a->sprite.transform.x,
+        .y = a->sprite.transform.y,
+        .w = a->sprite.transform.w,
+        .h = a->sprite.transform.h,
+    };
+
+    SDL_FRect rect_b = {
+        .x = b->sprite.transform.x,
+        .y = b->sprite.transform.y + 30,
+        .w = b->sprite.transform.w,
+        .h = b->sprite.transform.h - 30,
+    };
+
+    return SDL_HasIntersectionF(&rect_a, &rect_b);
+}
 
 static void create_actors(void)
 {
     ng_game_create(&ctx.game, "Cat", WIDTH, HEIGHT); //creates window
 
  
-    //We load the animations (run, jump, idle, sleep)
+    //load textures
     ctx.run_texture = IMG_LoadTexture(ctx.game.renderer, "assets/cat/run.png");
     ctx.jump_texture = IMG_LoadTexture(ctx.game.renderer, "assets/cat/jump.png");
     ctx.idle_texture = IMG_LoadTexture(ctx.game.renderer, "assets/cat/idle.png");
@@ -57,13 +76,12 @@ static void create_actors(void)
     ctx.mouse_texture = IMG_LoadTexture(ctx.game.renderer, "assets/characters/mouse.png");
     ctx.snowman_texture = IMG_LoadTexture(ctx.game.renderer, "assets/characters/snowman.png");
 
-
+    //timers
     ng_interval_create(&ctx.game_tick, 60);
     ng_interval_create(&ctx.ghost_tick, 150);
-    ng_interval_create(&ctx.mouse_tick, 150);
-    ng_interval_create(&ctx.snowman_tick, 150);
+    ng_interval_create(&ctx.snowman_tick, 2000);
     
-    //Create animations (run, jump, idle, sleep)
+    //create animations
     ng_animated_create(&ctx.run, ctx.run_texture, 7);  //run
     ng_sprite_set_scale(&ctx.run.sprite, 2.0f);
     ctx.run.sprite.transform.x = 100.0f;
@@ -89,19 +107,17 @@ static void create_actors(void)
     ctx.sleep.sprite.transform.x = 100.0f;
     ctx.sleep.sprite.transform.y = 100.0f;
 
-    for(int i = 0; i < 5; i++) {
-        ng_animated_create(&ctx.ghost[i], ctx.ghost_texture, 2);  //ghost
-        ng_sprite_set_scale(&ctx.ghost[i].sprite, 4.0f);
-        ctx.ghost[i].sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
-        ctx.ghost[i].sprite.transform.y = -64;
-    }
+    ng_animated_create(&ctx.ghost, ctx.ghost_texture, 2);  //ghost
+    ng_sprite_set_scale(&ctx.ghost.sprite, 4.0f);
+    ctx.ghost.sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
+    ctx.ghost.sprite.transform.y = -64;
 
     ng_animated_create(&ctx.mouse, ctx.mouse_texture, 4);  //mouse
     ng_sprite_set_scale(&ctx.mouse.sprite, 2.0f);    
     ctx.mouse.sprite.transform.x = -64.0f;
     ctx.mouse.sprite.transform.y = FLOOR;
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < MAX_SNOWMEN; i++) {
         ng_animated_create(&ctx.snowman[i], ctx.snowman_texture, 5);  //snowman
         ng_sprite_set_scale(&ctx.snowman[i].sprite, 5.0f);
         ctx.snowman[i].sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
@@ -111,11 +127,13 @@ static void create_actors(void)
     //load audio
     ctx.SB_bm = ng_music_load("assets/audio/OST 1 - Silver Bells (Loopable).ogg");
     ctx.run_sfx = ng_audio_load("assets/audio/run.wav");
+    ctx.hurt_sfx = ng_audio_load("assets/audio/hurt.wav");
 
 #ifndef NO_AUDIO
 
-    Mix_VolumeMusic(16);  // Background music at lower volume
-    Mix_VolumeChunk(ctx.run_sfx, 128);  // Running sound at full volume
+    Mix_VolumeMusic(16);  //background music at lower volume
+    Mix_VolumeChunk(ctx.run_sfx, 128);  //running sound at full volume
+    Mix_VolumeChunk(ctx.hurt_sfx, 128);
 
 #endif
 
@@ -125,12 +143,12 @@ static void create_actors(void)
     ctx.run_sfx_playing = false;
     ctx.run_sfx_channel = -1;
 
-    ctx.gravity = 1451.25f;      // Pixels per second squared
-    ctx.jump_velocity = 0.0f;  // Initially not moving
+    ctx.gravity = 1451.25f;      //pixels per second squared
+    ctx.jump_velocity = 0.0f;  //initially not moving
 
     ctx.count = 0;
 
-    //Start background music once, looping it indefinitely
+    //start background music once looping it indefinitely
     ng_music_play(ctx.SB_bm);
 }
 
@@ -140,13 +158,13 @@ static void handle_event(SDL_Event *event)
     {
     case SDL_KEYDOWN:
         if (event->key.keysym.sym == SDLK_w || event->key.keysym.sym == SDLK_UP) {
-            // Only start the jump animation if it's not already jumping
+            //only start the jump animation if it's not already jumping
             if (!ctx.is_jumping)
             {
                 ctx.is_jumping = true;
 
-                ctx.jump_velocity = -304.76f;  // Initial upward velocity
-                // Reset the jump animation to the first frame
+                ctx.jump_velocity = -304.76f;  //initial upward velocity
+                //reset the jump animation to the first frame
                 ng_animated_set_frame(&ctx.jump, 0);
             }
         }
@@ -154,28 +172,27 @@ static void handle_event(SDL_Event *event)
         
 
         if (event->key.keysym.sym == SDLK_SPACE) {
-            // Only start the attack animation if it's not already attacking
+            //only start the attack animation if it's not already attacking
             if (!ctx.is_attacking)
             {
                 ctx.is_attacking = true;
-
+                //reset the attack animation to the first frame
                 ng_animated_set_frame(&ctx.attack, 0);
             }
         }
         
-        //RUNNING ANIMATION EVENT (when Right Arrow is pressed)
         if (event->key.keysym.sym == SDLK_RIGHT || SDLK_d) {
-            // Only start the run animation if it's not already running
+            //only start the run animation if it's not already running
             if (!ctx.is_running)
             {
                 ctx.is_running = true;
-                // Reset the run animation to the first frame
+                //reset the run animation to the first frame
                 ng_animated_set_frame(&ctx.run, 0);
             }
 
             if (!ctx.run_sfx_playing) {
                 ctx.run_sfx_channel = ng_return_channel(ctx.run_sfx, -1);
-                ctx.run_sfx_playing = true;   // Mark that the sound has started
+                ctx.run_sfx_playing = true;   //mark that the sound has started
             }
         }
 
@@ -183,32 +200,32 @@ static void handle_event(SDL_Event *event)
 
             if (!ctx.run_sfx_playing) {
                 ctx.run_sfx_channel = ng_return_channel(ctx.run_sfx, -1);
-                ctx.run_sfx_playing = true;   // Mark that the sound has started
+                ctx.run_sfx_playing = true;   //mark that the sound has started
             }
         }
         break;
 
     case SDL_KEYUP:
         if (event->key.keysym.sym == SDLK_RIGHT || SDLK_d) {
-            // Stop running animation when the right key is released
+            //stop running animation when the right key is released
             ctx.is_running = false;
             if (ctx.run_sfx_playing) {
-                // Stop the running sound when the key is released
+                //stop the running sound when the key is released
                 #ifndef NO_AUDIO    
-                    Mix_HaltChannel(ctx.run_sfx_channel);  // Halt the specific channel
+                    Mix_HaltChannel(ctx.run_sfx_channel);  //halt the specific channel
                 #endif
-                ctx.run_sfx_playing = false;  // Mark that the sound has stopped
+                ctx.run_sfx_playing = false;  //mark that the sound has stopped
             }            
         }
 
         if (event->key.keysym.sym == SDLK_LEFT || SDLK_a) {
 
             if (ctx.run_sfx_playing) {
-                // Stop the running sound when the key is released
+                //stop the running sound when the key is released
                 #ifndef NO_AUDIO    
-                    Mix_HaltChannel(ctx.run_sfx_channel);  // Halt the specific channel
+                    Mix_HaltChannel(ctx.run_sfx_channel);  //halt the specific channel
                 #endif
-                ctx.run_sfx_playing = false;  // Mark that the sound has stopped
+                ctx.run_sfx_playing = false;  //mark that the sound has stopped
             }        
         }
 
@@ -239,62 +256,81 @@ static void update_and_render_scene(float delta)
         }
     }
 
-    for (int i = 0; i < 5; i++) {
-    if (ctx.ghost[i].sprite.transform.y < FLOOR) {
-        ctx.ghost[i].sprite.transform.y += 100 * delta;  // Make the ghost fall
-    }else {
-        // Once the ghost reaches the ground, reset its position to spawn again
-        ctx.ghost[i].sprite.transform.y = -64;  // Reset to top
-        ctx.ghost[i].sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);  // Random horizontal position
+
+    if (ctx.ghost.sprite.transform.y < FLOOR) {
+        ctx.ghost.sprite.transform.y += 100 * delta;  //make the ghost fall
     }
 
-    if (ctx.snowman[i].sprite.transform.y < FLOOR) {
-        ctx.snowman[i].sprite.transform.y += 100 * delta;  // Make the snowman fall
-    }else {
-        // Once the snowman reaches the ground, reset its position to spawn again
-        ctx.snowman[i].sprite.transform.y = -64;  // Reset to top
-        ctx.snowman[i].sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);  // Random horizontal position
+    for (int i = 0; i < ctx.active_snowmen; i++) {
+        if (ctx.snowman[i].sprite.transform.y < HEIGHT - 30) {
+            ctx.snowman[i].sprite.transform.y += 100 * delta;  //make the snowman fall
+        }else {
+            //once the snowman reaches the ground, reset its position to top
+            ctx.snowman[i].sprite.transform.y = -64;  
+            ctx.snowman[i].sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);  //random horizontal position
+        }
     }
 
+    //reset snowman to the top when it collides with the cat
+    for (int i = 0; i < ctx.active_snowmen; i++) {
+        if (check_collision(&ctx.snowman[i], &ctx.run)) {
+            ng_audio_play(ctx.hurt_sfx);
+            ctx.snowman[i].sprite.transform.y = -64; 
+            ctx.snowman[i].sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
+        }
     }
 
+    //reset ghost to the top when cat attacks and collides with the ghost
+    if (ctx.is_attacking) {
+            if (check_collision(&ctx.ghost, &ctx.attack)) {
+                ctx.ghost.sprite.transform.y = -64;  
+                ctx.ghost.sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
+            }
+    }
+
+    //add more snowmen
+    if (ng_interval_is_ready(&ctx.snowman_tick) && ctx.active_snowmen < MAX_SNOWMEN) {
+        ctx.active_snowmen++;
+    }
+
+    //cat animations
     if(ctx.is_attacking){
-        // Move to the next frame of the attacking animation
+        //move to the next frame of the attacking animation
         if (ng_interval_is_ready(&ctx.game_tick)) {
             ng_animated_set_frame(&ctx.attack, (ctx.attack.frame + 1) % ctx.attack.total_frames);
         }
 
         if (ctx.attack.frame == ctx.attack.total_frames - 1) {
-            ctx.is_attacking = false;  // Animation has finished, stop attacking
+            ctx.is_attacking = false;  //animation has finished stop attacking
 
         }
 
     }else if (ctx.is_jumping) {
-        // Only apply vertical motion during active jump frames (3 to 10)
+        //only apply vertical motion during active jump frames 3 to 10
     if (ctx.jump.frame >= 3 && ctx.jump.frame <= 10) {
-        ctx.jump_velocity += ctx.gravity * delta;  // Apply gravity
-        ctx.jump.sprite.transform.y += ctx.jump_velocity * delta;  // Update position
+        ctx.jump_velocity += ctx.gravity * delta;  
+        ctx.jump.sprite.transform.y += ctx.jump_velocity * delta; 
 
-        // Check if the sprite lands early due to gravity
+        //check if the sprite lands early due to gravity
         if (ctx.jump.sprite.transform.y >= FLOOR) {
-            ctx.jump.sprite.transform.y = FLOOR;  // Snap to ground
-            ctx.is_jumping = false;               // End jump
-            ctx.jump_velocity = 0.0f;             // Reset velocity
+            ctx.jump.sprite.transform.y = FLOOR;  //snap to ground
+            ctx.is_jumping = false;               //end jump
+            ctx.jump_velocity = 0.0f;             //reset velocity
         }
 
-            // Transition to running if the right key is held
+            //transition to running if the right key is held
             if (keys[SDL_SCANCODE_RIGHT] || keys[SDL_SCANCODE_D]) {
                 ctx.is_running = true;
-                ng_animated_set_frame(&ctx.run, 0);  // Reset running animation
+                ng_animated_set_frame(&ctx.run, 0);  //reset running animation
             }
         }
 
-        // Move to the next frame of the jump animation
+        //move to the next frame of the jump animation
         if (ng_interval_is_ready(&ctx.game_tick)) {
             ng_animated_set_frame(&ctx.jump, (ctx.jump.frame + 1) % ctx.jump.total_frames);
         }
     }else if(ctx.is_running){
-        // Move to the next frame of the running animation
+        //move to the next frame of the running animation
         if (ng_interval_is_ready(&ctx.game_tick)) {
             ng_animated_set_frame(&ctx.run, (ctx.run.frame + 1) % ctx.run.total_frames);
         }
@@ -304,18 +340,12 @@ static void update_and_render_scene(float delta)
         }
     }
 
-    for (int i = 0; i < 5; i++) {
+    //ghost animation
     if (ng_interval_is_ready(&ctx.ghost_tick)) {
-            ng_animated_set_frame(&ctx.ghost[i], (ctx.ghost[i].frame + 1) % ctx.ghost[i].total_frames);
-    }
-    // if (ng_interval_is_ready(&ctx.mouse_tick)) {
-    //         ng_animated_set_frame(&ctx.mouse, (ctx.mouse.frame + 1) % ctx.mouse.total_frames);
-    // }
-    if (ng_interval_is_ready(&ctx.snowman_tick)) {
-            ng_animated_set_frame(&ctx.snowman[i], (ctx.snowman[i].frame + 1) % ctx.snowman[i].total_frames);
+        ng_animated_set_frame(&ctx.ghost, (ctx.ghost.frame + 1) % ctx.ghost.total_frames);
     }
 
-    }
+
 
     // Render animations
     if (ctx.is_attacking){
@@ -325,12 +355,13 @@ static void update_and_render_scene(float delta)
     } else if (ctx.is_running){
          ng_sprite_render(&ctx.run.sprite, ctx.game.renderer);
     }else {
-        ng_sprite_render(&ctx.idle.sprite, ctx.game.renderer);  // Show idle if not jumping
+        ng_sprite_render(&ctx.idle.sprite, ctx.game.renderer);  //show idle when doing no actions
     }
 
-    for (int i = 0; i < 5; i++) {
-    ng_sprite_render(&ctx.ghost[i].sprite, ctx.game.renderer);
-    ng_sprite_render(&ctx.snowman[i].sprite, ctx.game.renderer);
+    ng_sprite_render(&ctx.ghost.sprite, ctx.game.renderer);
+
+    for (int i = 0; i < ctx.active_snowmen; i++) {
+        ng_sprite_render(&ctx.snowman[i].sprite, ctx.game.renderer);
     }
     //SDL_Delay(2000);
     ng_sprite_render(&ctx.mouse.sprite, ctx.game.renderer);
