@@ -27,14 +27,14 @@ static struct
     // A collection of assets used by entities
     // Ideally, they should have been automatically loaded
     // by iterating over the res/ folder and filling in a hastable
-    SDL_Texture *run_texture, *jump_texture, *idle_texture, *attack_texture, *sleep_texture, *ghost_texture, *mouse_texture, *snowman_texture, *heart_texture;
+    SDL_Texture *run_texture, *jump_texture, *idle_texture, *attack_texture, *sleep_texture, *ghost_texture, *mouse_texture, *snowman_texture, *heart_texture, *background_texture;
 
     ng_animated_sprite_t run, jump, idle, attack, sleep, ghost, mouse, snowman[MAX_SNOWMEN];
 
     ng_sprite_t heart[4];
 
     Mix_Music *SB_bm;
-    Mix_Chunk *run_sfx, *hurt_sfx;
+    Mix_Chunk *run_sfx, *hurt_sfx, *attack_sfx, *purr_sfx;
 
     TTF_Font *main_font, *death_font, *win_font;
     ng_label_t start_text, death_text, win_text;
@@ -51,12 +51,12 @@ static struct
     float jump_velocity;  
     float gravity;        
 
-    int hit_count;
     int ghost_count;
     int active_snowmen;
     int health;
 
 } ctx;
+
 
 bool check_collision(ng_animated_sprite_t *a, ng_animated_sprite_t *b) {
 
@@ -75,6 +75,44 @@ bool check_collision(ng_animated_sprite_t *a, ng_animated_sprite_t *b) {
     };
 
     return SDL_HasIntersectionF(&rect_a, &rect_b);
+}
+
+void reset_game_state() {
+    // Reset player health and position
+    ctx.health = 3;
+    ctx.ghost_count = 0;
+    ctx.is_attacking = false;
+    ctx.is_jumping = false;
+    ctx.is_running = false;
+
+    // Reset player animations
+    ng_animated_set_frame(&ctx.idle, 0);
+    ng_animated_set_frame(&ctx.run, 0);
+    ng_animated_set_frame(&ctx.jump, 0);
+    ng_animated_set_frame(&ctx.attack, 0);
+
+    ctx.jump.sprite.transform.x = 100.0f;
+    ctx.jump.sprite.transform.y = FLOOR;
+    ctx.run.sprite.transform.x = 100.0f;
+    ctx.run.sprite.transform.y = FLOOR;
+    ctx.attack.sprite.transform.x = 100.0f;
+    ctx.attack.sprite.transform.y = FLOOR;
+    ctx.idle.sprite.transform.x = 100.0f;
+    ctx.idle.sprite.transform.y = FLOOR;
+
+    ctx.ghost.sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
+    ctx.ghost.sprite.transform.y = -64;
+
+    ctx.active_snowmen = 0;
+    for (int i = 0; i < MAX_SNOWMEN; i++) {
+        ctx.snowman[i].sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
+        ctx.snowman[i].sprite.transform.y = -64;
+    }
+
+    ctx.mau = true;
+    ctx.mouse.sprite.transform.x = -64;
+
+    ctx.current_scene = SCENE_START;
 }
 
 
@@ -97,7 +135,8 @@ static void create_actors(void)
     ctx.ghost_texture = IMG_LoadTexture(ctx.game.renderer, "assets/characters/ghost.png");
     ctx.mouse_texture = IMG_LoadTexture(ctx.game.renderer, "assets/characters/mouse.png");
     ctx.snowman_texture = IMG_LoadTexture(ctx.game.renderer, "assets/characters/snowman.png");
-    ctx.heart_texture = IMG_LoadTexture(ctx.game.renderer, "assets/heart.png" );
+    ctx.heart_texture = IMG_LoadTexture(ctx.game.renderer, "assets/heart.png");
+    ctx.background_texture = IMG_LoadTexture(ctx.game.renderer, "assets/bg.png");
 
     //timers
     ng_interval_create(&ctx.game_tick, 60);
@@ -158,6 +197,9 @@ static void create_actors(void)
     ctx.SB_bm = ng_music_load("assets/audio/OST 1 - Silver Bells (Loopable).ogg");
     ctx.run_sfx = ng_audio_load("assets/audio/run.wav");
     ctx.hurt_sfx = ng_audio_load("assets/audio/hurt.wav");
+    ctx.attack_sfx = ng_audio_load("assets/audio/attack.wav");
+    ctx.purr_sfx = ng_audio_load("assets/audio/purr.wav");
+
 
     //load text
     ng_label_create(&ctx.start_text, ctx.main_font, 500);
@@ -188,6 +230,8 @@ static void create_actors(void)
     Mix_VolumeMusic(16);  //background music at lower volume
     Mix_VolumeChunk(ctx.run_sfx, 128);  //running sound at full volume
     Mix_VolumeChunk(ctx.hurt_sfx, 128);
+    Mix_VolumeChunk(ctx.attack_sfx, 128);
+    Mix_VolumeChunk(ctx.purr_sfx, 128);
 
 #endif
 
@@ -201,7 +245,6 @@ static void create_actors(void)
     ctx.gravity = 1451.25f;      //pixels per second squared
     ctx.jump_velocity = 0.0f;  //initially not moving
 
-    ctx.hit_count = 0;
     ctx.ghost_count = 0;
     ctx.health = 3;
 
@@ -292,6 +335,9 @@ static void handle_event(SDL_Event *event)
 
 static void update_and_render_scene(float delta)
 {
+
+    SDL_RenderCopy(ctx.game.renderer, ctx.background_texture, NULL, NULL);
+
     // Handling "continuous" events, which are now repeatable
     const Uint8* keys = SDL_GetKeyboardState(NULL);
     
@@ -333,7 +379,6 @@ static void update_and_render_scene(float delta)
     for (int i = 0; i < ctx.active_snowmen; i++) {
         if (check_collision(&ctx.snowman[i], &ctx.run)) {
             ng_audio_play(ctx.hurt_sfx);
-            ctx.hit_count++;
             ctx.health--;
             ctx.snowman[i].sprite.transform.y = -64; 
             ctx.snowman[i].sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
@@ -344,10 +389,12 @@ static void update_and_render_scene(float delta)
     if (ctx.is_attacking) {
             if (check_collision(&ctx.ghost, &ctx.attack)) {
                 ctx.ghost_count++;
+                ng_audio_play(ctx.attack_sfx);
                 ctx.ghost.sprite.transform.y = -64;  
                 ctx.ghost.sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
             }
             if (check_collision(&ctx.mouse, &ctx.attack)) {
+                ng_audio_play(ctx.attack_sfx);
                 ctx.mouse.sprite.transform.x = -64;
                 ctx.health++;
                 ctx.mau = false;
@@ -479,16 +526,15 @@ static void game_loop(float delta) {
             }
 
             ng_sprite_render(&ctx.sleep.sprite, ctx.game.renderer);
-        
+
+            ng_audio_play(ctx.purr_sfx);
+
             break;
         case SCENE_DEATH:
             ng_sprite_render(&ctx.death_text.sprite, ctx.game.renderer);
 
             if (keys[SDL_SCANCODE_SPACE]){
-                ctx.hit_count = 0;
-                ctx.ghost_count = 0;
-                ctx.health = 3;
-                ctx.current_scene = SCENE_PLAYING;
+                reset_game_state();
             }
             break;
     }
