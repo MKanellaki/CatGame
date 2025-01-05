@@ -17,7 +17,7 @@ typedef struct
 // The wrap width should be provided in pixels
 void ng_label_create(ng_label_t *label, TTF_Font *font, unsigned int wrap_length);
 
-void ng_label_set_content(ng_label_t *label, SDL_Renderer *renderer, const char *content);
+void ng_label_set_content(ng_label_t *label, SDL_Renderer *renderer, const char *content, SDL_Color color);
 void ng_label_destroy(ng_label_t *label);
 
 #endif

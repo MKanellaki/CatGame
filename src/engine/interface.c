@@ -13,14 +13,14 @@ void ng_label_create(ng_label_t *label, TTF_Font *font, unsigned int wrap_length
     label->wrap_length = wrap_length;
 }
 
-void ng_label_set_content(ng_label_t *label, SDL_Renderer *renderer, const char *content)
+void ng_label_set_content(ng_label_t *label, SDL_Renderer *renderer, const char *content, SDL_Color color)
 {
     // Avoid the memory leak
     SDL_DestroyTexture(label->sprite.texture);
     
     SDL_Surface *surface = label->wrap_length > 0
-        ? TTF_RenderText_Solid_Wrapped(label->font, content, white, label->wrap_length)
-        : TTF_RenderText_Solid(label->font, content, white);
+        ? TTF_RenderText_Solid_Wrapped(label->font, content, color, label->wrap_length)
+        : TTF_RenderText_Solid(label->font, content, color);
 
     ng_sprite_create(&label->sprite, SDL_CreateTextureFromSurface(renderer, surface));
     SDL_FreeSurface(surface);

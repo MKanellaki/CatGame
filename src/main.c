@@ -12,6 +12,10 @@
 #define SPEED 480
 #define MAX_SNOWMEN 5
 
+static SDL_Color white = {255, 255, 255, 255};
+static SDL_Color red = {255, 0, 0, 255};
+static SDL_Color green = {50, 200, 10, 255};
+
 typedef enum {
     SCENE_START,
     SCENE_PLAYING,
@@ -35,7 +39,7 @@ static struct
     // A collection of assets used by entities
     // Ideally, they should have been automatically loaded
     // by iterating over the res/ folder and filling in a hastable
-    SDL_Texture *run_texture, *jump_texture, *idle_texture, *attack_texture, *sleep_texture, *ghost_texture, *mouse_texture, *snowman_texture, *heart_texture, *background_texture;
+    SDL_Texture *run_texture, *jump_texture, *idle_texture, *attack_texture, *sleep_texture, *ghost_texture, *mouse_texture, *snowman_texture, *heart_texture, *background_texture, *win_bg_texture;
 
     ng_animated_sprite_t run, jump, idle, attack, sleep, ghost, mouse, snowman[MAX_SNOWMEN];
 
@@ -45,7 +49,7 @@ static struct
     Mix_Chunk *run_sfx, *hurt_sfx, *attack_sfx, *purr_sfx;
 
     TTF_Font *main_font, *death_font, *win_font;
-    ng_label_t start_text, death_text, win_text;
+    ng_label_t start_text, death_text, win_text, win2_text;
 
     Scene current_scene;
 
@@ -125,6 +129,12 @@ void reset_game_state() {
     ctx.mau = true;
     ctx.mouse.sprite.transform.x = -64;
 
+    #ifndef NO_AUDIO
+
+        Mix_VolumeMusic(16);  //background music at lower volume
+
+    #endif
+
     ctx.current_scene = SCENE_START;
 }
 
@@ -150,6 +160,8 @@ static void create_actors(void)
     ctx.snowman_texture = IMG_LoadTexture(ctx.game.renderer, "assets/characters/snowman.png");
     ctx.heart_texture = IMG_LoadTexture(ctx.game.renderer, "assets/heart.png");
     ctx.background_texture = IMG_LoadTexture(ctx.game.renderer, "assets/bg.png");
+    ctx.win_bg_texture = IMG_LoadTexture(ctx.game.renderer, "assets/win_bg.png");
+
 
     //timers
     ng_interval_create(&ctx.game_tick, 60);
@@ -181,7 +193,7 @@ static void create_actors(void)
     ng_animated_create(&ctx.sleep, ctx.sleep_texture, 3);  //sleep
     ng_sprite_set_scale(&ctx.sleep.sprite, 4.0f);
     ctx.sleep.sprite.transform.x = (WIDTH - ctx.sleep.sprite.transform.w) / 2.0f;
-    ctx.sleep.sprite.transform.y = (HEIGHT - ctx.sleep.sprite.transform.h) / 2.0f;
+    ctx.sleep.sprite.transform.y = HEIGHT - 150 ;
 
     ng_animated_create(&ctx.ghost, ctx.ghost_texture, 2);  //ghost
     ng_sprite_set_scale(&ctx.ghost.sprite, 4.0f);
@@ -217,26 +229,34 @@ static void create_actors(void)
     //load text
     ng_label_create(&ctx.start_text, ctx.main_font, 500);
     ng_label_set_content(&ctx.start_text, ctx.game.renderer,
-            "Help the little cat save Christmas. "
-            "Dodge the falling snowmen. \n"
-            "Attack the ghosts with \"space\". \n"
-            "press \"space\" to continue ");
-    ctx.start_text.sprite.transform.x = (WIDTH - 400) / 2.0f;
+            "Help the little cat save Christmas\n"
+            "Dodge the falling snowmen \n"
+            "Attack the ghosts with \"space\" \n"
+            "Defeat 15 ghosts to win \n"
+            "press \"Enter\" to start or play again ",
+            white);
+    ctx.start_text.sprite.transform.x = (WIDTH - 450) / 2.0f;
     ctx.start_text.sprite.transform.y = (HEIGHT - 150) / 2.0f;
 
     ng_label_create(&ctx.death_text, ctx.death_font, 175);
     ng_label_set_content(&ctx.death_text, ctx.game.renderer,
-            "Game Over"
-            );
+            "Game Over",
+            red);
     ctx.death_text.sprite.transform.x = (WIDTH - 175) / 2.0f;
     ctx.death_text.sprite.transform.y = (HEIGHT - 125) / 2.0f;
 
     ng_label_create(&ctx.win_text, ctx.win_font, 285);
     ng_label_set_content(&ctx.win_text, ctx.game.renderer,
-            "Congratulations\n"
-            );
+            "Congratulations\n",
+            green);
     ctx.win_text.sprite.transform.x = (WIDTH - 285) / 2.0f;
-    ctx.win_text.sprite.transform.y = (HEIGHT - 300) / 2.0f;
+    ctx.win_text.sprite.transform.y = (HEIGHT - 450) / 2.0f;
+    ng_label_create(&ctx.win2_text, ctx.win_font, 323);
+    ng_label_set_content(&ctx.win2_text, ctx.game.renderer,
+            "You saved Catmas\n",
+            green);
+    ctx.win2_text.sprite.transform.x = (WIDTH - 300) / 2.0f;
+    ctx.win2_text.sprite.transform.y = (HEIGHT - 350) / 2.0f;
 
 #ifndef NO_AUDIO
 
@@ -418,7 +438,7 @@ static void update_and_render_scene(float delta)
             }
             if (check_collision(&ctx.mouse, &ctx.attack)) {
                 ng_audio_play(ctx.attack_sfx);
-                ctx.mouse.sprite.transform.x = -64;
+                ctx.mouse.sprite.transform.x = -200;
                 ctx.health++;
                 ctx.mau = false;
             }
@@ -528,7 +548,7 @@ static void update_and_render_scene(float delta)
     }else if(ctx.health == 0) {
        ctx.current_scene = SCENE_DEATH; 
     }
-    if(ctx.ghost_count == 10) {
+    if(ctx.ghost_count == 15) {
         ctx.current_scene = SCENE_GAME_OVER;
     }
 }
@@ -539,7 +559,7 @@ static void game_loop(float delta) {
         case SCENE_START:
             ng_sprite_render(&ctx.start_text.sprite, ctx.game.renderer);
 
-            if (keys[SDL_SCANCODE_SPACE]){
+            if (keys[SDL_SCANCODE_RETURN]){
                 ctx.current_scene = SCENE_PLAYING;
             }
             break;
@@ -547,7 +567,17 @@ static void game_loop(float delta) {
             update_and_render_scene(delta);
             break;
         case SCENE_GAME_OVER:
+
+            #ifndef NO_AUDIO
+
+                Mix_VolumeMusic(5);  //background music at lower volum
+
+            #endif
+
+            SDL_RenderCopy(ctx.game.renderer, ctx.win_bg_texture, NULL, NULL);
+
             ng_sprite_render(&ctx.win_text.sprite, ctx.game.renderer);
+            ng_sprite_render(&ctx.win2_text.sprite, ctx.game.renderer);
 
             if (ng_interval_is_ready(&ctx.sleep_tick)) {
                 ng_animated_set_frame(&ctx.sleep, (ctx.sleep.frame + 1) % ctx.sleep.total_frames);
@@ -557,11 +587,15 @@ static void game_loop(float delta) {
 
             ng_audio_play(ctx.purr_sfx);
 
+            if (keys[SDL_SCANCODE_RETURN]){
+                reset_game_state();
+            }
+
             break;
         case SCENE_DEATH:
             ng_sprite_render(&ctx.death_text.sprite, ctx.game.renderer);
 
-            if (keys[SDL_SCANCODE_SPACE]){
+            if (keys[SDL_SCANCODE_RETURN]){
                 reset_game_state();
             }
             break;
