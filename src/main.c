@@ -12,10 +12,17 @@
 #define SPEED 480
 #define MAX_SNOWMEN 5
 
+typedef enum {
+    SCENE_START,
+    SCENE_PLAYING,
+    SCENE_GAME_OVER,
+    SCENE_DEATH
+} Scene;
+
 static struct
 {
     ng_game_t game;
-    ng_interval_t game_tick, ghost_tick, mouse_tick, snowman_tick;
+    ng_interval_t game_tick, ghost_tick, mouse_tick, snowman_tick, sleep_tick;
 
     // A collection of assets used by entities
     // Ideally, they should have been automatically loaded
@@ -27,6 +34,10 @@ static struct
     Mix_Music *SB_bm;
     Mix_Chunk *run_sfx, *hurt_sfx;
 
+    TTF_Font *main_font, *death_font, *win_font;
+    ng_label_t start_text, death_text, win_text;
+
+    Scene current_scene;
 
     bool is_jumping;
     bool is_running;
@@ -37,7 +48,8 @@ static struct
     float jump_velocity;  
     float gravity;        
 
-    int count;
+    int hit_count;
+    int ghost_count;
     int active_snowmen;
 
 } ctx;
@@ -61,9 +73,15 @@ bool check_collision(ng_animated_sprite_t *a, ng_animated_sprite_t *b) {
     return SDL_HasIntersectionF(&rect_a, &rect_b);
 }
 
+
+
 static void create_actors(void)
 {
     ng_game_create(&ctx.game, "Cat", WIDTH, HEIGHT); //creates window
+
+    ctx.main_font = TTF_OpenFont("assets/free_mono.ttf", 20);
+    ctx.death_font = TTF_OpenFont("assets/free_mono.ttf", 32);
+    ctx.win_font = TTF_OpenFont("assets/free_mono.ttf", 32);
 
  
     //load textures
@@ -80,6 +98,7 @@ static void create_actors(void)
     ng_interval_create(&ctx.game_tick, 60);
     ng_interval_create(&ctx.ghost_tick, 150);
     ng_interval_create(&ctx.snowman_tick, 2000);
+    ng_interval_create(&ctx.sleep_tick, 300);
     
     //create animations
     ng_animated_create(&ctx.run, ctx.run_texture, 7);  //run
@@ -103,9 +122,9 @@ static void create_actors(void)
     ctx.attack.sprite.transform.y = FLOOR;
     
     ng_animated_create(&ctx.sleep, ctx.sleep_texture, 3);  //sleep
-    ng_sprite_set_scale(&ctx.sleep.sprite, 2.0f);
-    ctx.sleep.sprite.transform.x = 100.0f;
-    ctx.sleep.sprite.transform.y = 100.0f;
+    ng_sprite_set_scale(&ctx.sleep.sprite, 4.0f);
+    ctx.sleep.sprite.transform.x = (WIDTH - ctx.sleep.sprite.transform.w) / 2.0f;
+    ctx.sleep.sprite.transform.y = (HEIGHT - ctx.sleep.sprite.transform.h) / 2.0f;
 
     ng_animated_create(&ctx.ghost, ctx.ghost_texture, 2);  //ghost
     ng_sprite_set_scale(&ctx.ghost.sprite, 4.0f);
@@ -129,6 +148,30 @@ static void create_actors(void)
     ctx.run_sfx = ng_audio_load("assets/audio/run.wav");
     ctx.hurt_sfx = ng_audio_load("assets/audio/hurt.wav");
 
+    //load text
+    ng_label_create(&ctx.start_text, ctx.main_font, 500);
+    ng_label_set_content(&ctx.start_text, ctx.game.renderer,
+            "Help the little cat save Christmas. "
+            "Dodge the falling snowmen. \n"
+            "Attack the ghosts with \"space\". \n"
+            "press \"space\" to continue ");
+    ctx.start_text.sprite.transform.x = (WIDTH - 400) / 2.0f;
+    ctx.start_text.sprite.transform.y = (HEIGHT - 150) / 2.0f;
+
+    ng_label_create(&ctx.death_text, ctx.death_font, 175);
+    ng_label_set_content(&ctx.death_text, ctx.game.renderer,
+            "Game Over"
+            );
+    ctx.death_text.sprite.transform.x = (WIDTH - 175) / 2.0f;
+    ctx.death_text.sprite.transform.y = (HEIGHT - 125) / 2.0f;
+
+    ng_label_create(&ctx.win_text, ctx.win_font, 285);
+    ng_label_set_content(&ctx.win_text, ctx.game.renderer,
+            "Congratulations\n"
+            );
+    ctx.win_text.sprite.transform.x = (WIDTH - 285) / 2.0f;
+    ctx.win_text.sprite.transform.y = (HEIGHT - 300) / 2.0f;
+
 #ifndef NO_AUDIO
 
     Mix_VolumeMusic(16);  //background music at lower volume
@@ -146,7 +189,8 @@ static void create_actors(void)
     ctx.gravity = 1451.25f;      //pixels per second squared
     ctx.jump_velocity = 0.0f;  //initially not moving
 
-    ctx.count = 0;
+    ctx.hit_count = 0;
+    ctx.ghost_count = 0;
 
     //start background music once looping it indefinitely
     ng_music_play(ctx.SB_bm);
@@ -181,7 +225,7 @@ static void handle_event(SDL_Event *event)
             }
         }
         
-        if (event->key.keysym.sym == SDLK_RIGHT || SDLK_d) {
+        if (event->key.keysym.sym == SDLK_RIGHT || event->key.keysym.sym == SDLK_d) {
             //only start the run animation if it's not already running
             if (!ctx.is_running)
             {
@@ -196,7 +240,7 @@ static void handle_event(SDL_Event *event)
             }
         }
 
-        if (event->key.keysym.sym == SDLK_LEFT || SDLK_a) {
+        if (event->key.keysym.sym == SDLK_LEFT || event->key.keysym.sym == SDLK_a) {
 
             if (!ctx.run_sfx_playing) {
                 ctx.run_sfx_channel = ng_return_channel(ctx.run_sfx, -1);
@@ -206,7 +250,7 @@ static void handle_event(SDL_Event *event)
         break;
 
     case SDL_KEYUP:
-        if (event->key.keysym.sym == SDLK_RIGHT || SDLK_d) {
+        if (event->key.keysym.sym == SDLK_RIGHT || event->key.keysym.sym == SDLK_d) {
             //stop running animation when the right key is released
             ctx.is_running = false;
             if (ctx.run_sfx_playing) {
@@ -218,7 +262,7 @@ static void handle_event(SDL_Event *event)
             }            
         }
 
-        if (event->key.keysym.sym == SDLK_LEFT || SDLK_a) {
+        if (event->key.keysym.sym == SDLK_LEFT || event->key.keysym.sym == SDLK_a) {
 
             if (ctx.run_sfx_playing) {
                 //stop the running sound when the key is released
@@ -231,6 +275,7 @@ static void handle_event(SDL_Event *event)
 
     }
 }
+
 
 static void update_and_render_scene(float delta)
 {
@@ -275,6 +320,7 @@ static void update_and_render_scene(float delta)
     for (int i = 0; i < ctx.active_snowmen; i++) {
         if (check_collision(&ctx.snowman[i], &ctx.run)) {
             ng_audio_play(ctx.hurt_sfx);
+            ctx.hit_count++;
             ctx.snowman[i].sprite.transform.y = -64; 
             ctx.snowman[i].sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
         }
@@ -283,6 +329,7 @@ static void update_and_render_scene(float delta)
     //reset ghost to the top when cat attacks and collides with the ghost
     if (ctx.is_attacking) {
             if (check_collision(&ctx.ghost, &ctx.attack)) {
+                ctx.ghost_count++;
                 ctx.ghost.sprite.transform.y = -64;  
                 ctx.ghost.sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
             }
@@ -368,11 +415,54 @@ static void update_and_render_scene(float delta)
 
      
     ctx.mouse.sprite.transform.x += 50* delta;
+
+    if(ctx.hit_count == 3)  {
+       ctx.current_scene = SCENE_DEATH; 
+    }else if(ctx.ghost_count == 1) {
+        ctx.current_scene = SCENE_GAME_OVER;
+    }
+}
+
+static void game_loop(float delta) {
+    const Uint8* keys = SDL_GetKeyboardState(NULL);
+    switch (ctx.current_scene) {
+        case SCENE_START:
+            ng_sprite_render(&ctx.start_text.sprite, ctx.game.renderer);
+
+            if (keys[SDL_SCANCODE_SPACE]){
+                ctx.current_scene = SCENE_PLAYING;
+            }
+            break;
+        case SCENE_PLAYING:
+            update_and_render_scene(delta);
+            break;
+        case SCENE_GAME_OVER:
+            ng_sprite_render(&ctx.win_text.sprite, ctx.game.renderer);
+
+            if (ng_interval_is_ready(&ctx.sleep_tick)) {
+                ng_animated_set_frame(&ctx.sleep, (ctx.sleep.frame + 1) % ctx.sleep.total_frames);
+            }
+
+            ng_sprite_render(&ctx.sleep.sprite, ctx.game.renderer);
+        
+            break;
+        case SCENE_DEATH:
+            ng_sprite_render(&ctx.death_text.sprite, ctx.game.renderer);
+
+            if (keys[SDL_SCANCODE_SPACE]){
+                ctx.hit_count = 0;
+                ctx.ghost_count = 0;
+                ctx.current_scene = SCENE_PLAYING;
+            }
+            break;
+    }
 }
 
 int main()
 {
     create_actors();
+    ctx.current_scene = SCENE_START;
+    
     ng_game_start_loop(&ctx.game,
-            handle_event, update_and_render_scene);
+            handle_event, game_loop);
 }
