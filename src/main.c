@@ -27,9 +27,11 @@ static struct
     // A collection of assets used by entities
     // Ideally, they should have been automatically loaded
     // by iterating over the res/ folder and filling in a hastable
-    SDL_Texture *run_texture, *jump_texture, *idle_texture, *attack_texture, *sleep_texture, *ghost_texture, *mouse_texture, *snowman_texture;
+    SDL_Texture *run_texture, *jump_texture, *idle_texture, *attack_texture, *sleep_texture, *ghost_texture, *mouse_texture, *snowman_texture, *heart_texture;
 
     ng_animated_sprite_t run, jump, idle, attack, sleep, ghost, mouse, snowman[MAX_SNOWMEN];
+
+    ng_sprite_t heart[4];
 
     Mix_Music *SB_bm;
     Mix_Chunk *run_sfx, *hurt_sfx;
@@ -44,6 +46,7 @@ static struct
     bool is_attacking;
     bool run_sfx_playing;
     int run_sfx_channel;
+    bool mau;
 
     float jump_velocity;  
     float gravity;        
@@ -51,6 +54,7 @@ static struct
     int hit_count;
     int ghost_count;
     int active_snowmen;
+    int health;
 
 } ctx;
 
@@ -93,6 +97,7 @@ static void create_actors(void)
     ctx.ghost_texture = IMG_LoadTexture(ctx.game.renderer, "assets/characters/ghost.png");
     ctx.mouse_texture = IMG_LoadTexture(ctx.game.renderer, "assets/characters/mouse.png");
     ctx.snowman_texture = IMG_LoadTexture(ctx.game.renderer, "assets/characters/snowman.png");
+    ctx.heart_texture = IMG_LoadTexture(ctx.game.renderer, "assets/heart.png" );
 
     //timers
     ng_interval_create(&ctx.game_tick, 60);
@@ -142,6 +147,12 @@ static void create_actors(void)
         ctx.snowman[i].sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
         ctx.snowman[i].sprite.transform.y = -64;
     }
+
+    for (int i = 0; i < 4; i++) {
+        ng_sprite_create(&ctx.heart[i], ctx.heart_texture);
+        ng_sprite_set_scale(&ctx.heart[i], 1.0f);
+        ctx.heart[i].transform.x = i * 40;
+    }
     
     //load audio
     ctx.SB_bm = ng_music_load("assets/audio/OST 1 - Silver Bells (Loopable).ogg");
@@ -184,6 +195,7 @@ static void create_actors(void)
     ctx.is_running = false; 
     ctx.is_attacking = false;
     ctx.run_sfx_playing = false;
+    ctx.mau = true;
     ctx.run_sfx_channel = -1;
 
     ctx.gravity = 1451.25f;      //pixels per second squared
@@ -191,6 +203,7 @@ static void create_actors(void)
 
     ctx.hit_count = 0;
     ctx.ghost_count = 0;
+    ctx.health = 3;
 
     //start background music once looping it indefinitely
     ng_music_play(ctx.SB_bm);
@@ -321,6 +334,7 @@ static void update_and_render_scene(float delta)
         if (check_collision(&ctx.snowman[i], &ctx.run)) {
             ng_audio_play(ctx.hurt_sfx);
             ctx.hit_count++;
+            ctx.health--;
             ctx.snowman[i].sprite.transform.y = -64; 
             ctx.snowman[i].sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
         }
@@ -332,6 +346,11 @@ static void update_and_render_scene(float delta)
                 ctx.ghost_count++;
                 ctx.ghost.sprite.transform.y = -64;  
                 ctx.ghost.sprite.transform.x = ng_random_int_in_range(0, WIDTH - 64);
+            }
+            if (check_collision(&ctx.mouse, &ctx.attack)) {
+                ctx.mouse.sprite.transform.x = -64;
+                ctx.health++;
+                ctx.mau = false;
             }
     }
 
@@ -411,14 +430,30 @@ static void update_and_render_scene(float delta)
         ng_sprite_render(&ctx.snowman[i].sprite, ctx.game.renderer);
     }
     //SDL_Delay(2000);
-    ng_sprite_render(&ctx.mouse.sprite, ctx.game.renderer);
+    if (ctx.mau){
+        ng_sprite_render(&ctx.mouse.sprite, ctx.game.renderer);
+        ctx.mouse.sprite.transform.x += 50* delta;
+    }
 
-     
-    ctx.mouse.sprite.transform.x += 50* delta;
-
-    if(ctx.hit_count == 3)  {
+    if (ctx.health >= 4){
+        ctx.health = 4;
+        for (int i = 0; i < 4; i++) {
+            ng_sprite_render(&ctx.heart[i], ctx.game.renderer);
+        }
+    }else if(ctx.health == 3) {
+       for (int i = 0; i < 3; i++) {
+            ng_sprite_render(&ctx.heart[i], ctx.game.renderer);
+        }
+    }else if(ctx.health == 2) {
+        for (int i = 0; i < 2; i++) {
+            ng_sprite_render(&ctx.heart[i], ctx.game.renderer);
+        }
+    }else if(ctx.health == 1) {
+        ng_sprite_render(&ctx.heart[0], ctx.game.renderer);
+    }else if(ctx.health == 0) {
        ctx.current_scene = SCENE_DEATH; 
-    }else if(ctx.ghost_count == 1) {
+    }
+    if(ctx.ghost_count == 10) {
         ctx.current_scene = SCENE_GAME_OVER;
     }
 }
@@ -452,6 +487,7 @@ static void game_loop(float delta) {
             if (keys[SDL_SCANCODE_SPACE]){
                 ctx.hit_count = 0;
                 ctx.ghost_count = 0;
+                ctx.health = 3;
                 ctx.current_scene = SCENE_PLAYING;
             }
             break;
